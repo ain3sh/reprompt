@@ -9,6 +9,8 @@ It is designed to help when copying text from terminal UIs (like AI agents, logs
 ### Single Line Install (Linux / macOS / WSL)
 
 ```bash
+curl -fsSL https://ain3sh.com/reprompt/install.sh | bash
+# equivalent to
 curl -fsSL https://raw.githubusercontent.com/ain3sh/reprompt/main/scripts/install.sh | bash
 ```
 
@@ -65,9 +67,12 @@ Add an alias or bind a key in your terminal emulator or window manager.
 alias cleanclip='reprompt'
 ```
 
-## Supported Environments
+## Supported Environments & Dependencies
 
-- **Linux (X11/Wayland)**: Uses `arboard`.
-- **Windows**: Uses `arboard`.
-- **macOS**: Uses `arboard`.
-- **WSL2 (Headless)**: Automatically detects WSL and proxies clipboard commands to Windows host via `powershell.exe` and `clip.exe`.
+| Platform | Environment | Runtime Requirements | Notes |
+| :--- | :--- | :--- | :--- |
+| **Windows** | Native | None | Works out of the box. |
+| **macOS** | Native | None | Works out of the box. |
+| **WSL** | WSL2 | `powershell.exe`, `clip.exe` | Proxies to Windows clipboard automatically. |
+| **Linux** | Desktop (X11/Wayland) | X Server / Wayland | Requires a clipboard manager (usually built-in) for persistence. |
+| **Linux** | Headless (CI/SSH) | `xvfb`, `x11-apps` | Requires `xvfb` for display and `xclipboard` (from `x11-apps`) to persist data after exit. |
