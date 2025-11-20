@@ -1,10 +1,6 @@
-- [x] Check SPEC.md
-- [x] View AGENT_REMINDERS.md
-- [x] Install Reprompt using one-liner
-- [x] View AGENT_REMINDERS.md
-- [x] Test Reprompt functionality
-- [x] View AGENT_REMINDERS.md
-- [x] Report Findings
-- [x] View AGENT_REMINDERS.md
-- [x] Update README with dependencies and new install snippet
-- [x] View AGENT_REMINDERS.md
+- [x] Update install path to ~/.local/bin
+- [x] Review AGENT_REMINDERS.md
+- [x] Update README.md and SPEC.md
+- [x] Review AGENT_REMINDERS.md
+- [x] Auto-add to PATH in .bashrc/.zshrc
+- [x] Review AGENT_REMINDERS.md

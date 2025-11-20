@@ -332,15 +332,15 @@ The user will need to build for their target.
 
 2\.  \*\*macOS:\*\*
 
-&nbsp;   \*   Move binary to `/usr/local/bin/reprompt`.
+&nbsp;   \*   Move binary to `~/.local/bin/reprompt` (or another location in `$PATH`).
 
-&nbsp;   \*   Use \*\*Automator\*\*: Create a "Quick Action" -> "Run Shell Script" (`/usr/local/bin/reprompt`) -> Save as "Trim Clipboard".
+&nbsp;   \*   Use \*\*Automator\*\*: Create a "Quick Action" -> "Run Shell Script" (`/path/to/reprompt`) -> Save as "Trim Clipboard".
 
 &nbsp;   \*   Assign Keybind in System Settings -> Keyboard -> Shortcuts -> Services.
 
 3\.  \*\*Linux / WSL2:\*\*
 
-&nbsp;   \*   Move binary to `/usr/local/bin/reprompt`.
+&nbsp;   \*   Move binary to `~/.local/bin/reprompt` (or another location in `$PATH`).
 
 &nbsp;   \*   Add alias to `.bashrc` or bind via your Terminal Emulator settings.
 

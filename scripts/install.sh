@@ -56,15 +56,54 @@ curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/reprompt"
 chmod +x "$TMP_DIR/reprompt"
 
 # Install
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="$HOME/.local/bin"
 echo "Installing to $INSTALL_DIR ..."
 
-if [ -w "$INSTALL_DIR" ]; then
-    mv "$TMP_DIR/reprompt" "$INSTALL_DIR/reprompt"
-else
-    echo "Sudo permission required to move binary to $INSTALL_DIR"
-    sudo mv "$TMP_DIR/reprompt" "$INSTALL_DIR/reprompt"
+# Create directory if it doesn't exist
+if [ ! -d "$INSTALL_DIR" ]; then
+    mkdir -p "$INSTALL_DIR"
 fi
 
+mv "$TMP_DIR/reprompt" "$INSTALL_DIR/reprompt"
+
 echo "Successfully installed reprompt!"
-echo "Run 'reprompt' to sanitize your clipboard."
+
+# Check PATH
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+    echo "WARNING: $INSTALL_DIR is not in your PATH."
+    echo "Attempting to add it to your shell configuration..."
+
+    EXPORT_CMD="export PATH=\"\$HOME/.local/bin:\$PATH\""
+    UPDATED_CONFIG=0
+
+    # Function to update config file
+    update_config() {
+        local config="$1"
+        if [ -f "$config" ]; then
+            if grep -q ".local/bin" "$config"; then
+                echo "  - $config: Already contains .local/bin"
+            else
+                echo "  - $config: Appending to PATH..."
+                echo "" >> "$config"
+                echo "# Added by reprompt installer" >> "$config"
+                echo "$EXPORT_CMD" >> "$config"
+                UPDATED_CONFIG=1
+            fi
+        fi
+    }
+
+    # Check common shell configs
+    update_config "$HOME/.bashrc"
+    update_config "$HOME/.zshrc"
+
+    if [ $UPDATED_CONFIG -eq 1 ]; then
+        echo "Successfully updated shell configuration."
+        echo "Please restart your terminal or run 'source <your_shell_config>' to apply."
+    else
+        echo "Could not detect or update .bashrc / .zshrc."
+        echo "Please manually add the following line to your shell configuration:"
+        echo "  $EXPORT_CMD"
+    fi
+else
+    echo "Run 'reprompt' to sanitize your clipboard."
+fi
