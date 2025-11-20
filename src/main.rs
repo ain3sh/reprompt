@@ -18,8 +18,10 @@ lazy_static! {
         $
     ").expect("Invalid Content Wrapper Regex");
 
-    // Regex to detect common mojibake patterns (UTF-8 misinterpreted as other encodings)
-    static ref RE_MOJIBAKE: Regex = Regex::new(r"[∩┐╜�â€™â€œâ€]").expect("Invalid Mojibake Regex");
+    // Regex to detect the Unicode replacement character (U+FFFD)
+    // This reliably indicates encoding corruption without false positives on legitimate Unicode
+    // characters like €, ™, or letters with diacritics (â, ê, etc.)
+    static ref RE_MOJIBAKE: Regex = Regex::new("\u{FFFD}").expect("Invalid Mojibake Regex");
 
     // ANSI escape codes (colors, formatting) that TUIs often add
     static ref RE_ANSI: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").expect("Invalid ANSI Regex");
@@ -219,11 +221,12 @@ fn set_clipboard(data: &str) -> Result<()> {
     if is_wsl_custom() {
         // Use PowerShell Set-Clipboard for better encoding support
         // clip.exe can have encoding issues with UTF-8
+        // CRITICAL: Set InputEncoding to UTF-8 for pipeline input to prevent mojibake
         match Command::new("powershell.exe")
             .args([
                 "-NoProfile",
                 "-Command",
-                "$input | Set-Clipboard"
+                "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; $input | Set-Clipboard"
             ])
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
