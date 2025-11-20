@@ -1,20 +1,10 @@
-- [x] Fetch PR comments [No pending comments found via tool, inspected code manually]
+- [x] Check SPEC.md
 - [x] View AGENT_REMINDERS.md
-- [x] Analyze comments and plan fixes [Identified edition 2024 -> 2021 and clippy lint]
+- [x] Install Reprompt using one-liner
 - [x] View AGENT_REMINDERS.md
-- [x] Apply fixes for PR comments
+- [x] Test Reprompt functionality
 - [x] View AGENT_REMINDERS.md
-- [x] Verify changes and run tests
+- [x] Report Findings
 - [x] View AGENT_REMINDERS.md
-- [x] Pre-commit checks
-- [x] View AGENT_REMINDERS.md
-- [x] Fix GitHub Actions Workflow triggers
-- [x] View AGENT_REMINDERS.md
-- [x] Create `scripts/install.sh`
-- [x] View AGENT_REMINDERS.md
-- [x] Update `README.md`
-- [x] View AGENT_REMINDERS.md
-- [x] Verify installation script logic
-- [x] View AGENT_REMINDERS.md
-- [x] Run pre-commit checks
+- [x] Update README with dependencies and new install snippet
 - [x] View AGENT_REMINDERS.md
