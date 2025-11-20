@@ -792,8 +792,6 @@ mod tests {
         let gibberish = "?∩┐╜∩┐╜∩┐╜ Claude Code v2.0.47 ∩┐╜∩┐╜∩┐╜\n∩┐╜ Recent activity ∩┐╜\n∩┐╜ Welcome back Ainesh! ∩┐╜ No recent activity ∩┐╜\n∩┐╜ What's new ∩┐╜\n∩┐╜ /home/ain3sh ∩┐╜";
 
         let cleaned = clean_text(gibberish);
-        
-        println!("Cleaned output:\n{}", cleaned);
 
         // The important content lines should be preserved
         assert!(cleaned.contains("Welcome back Ainesh!"));
