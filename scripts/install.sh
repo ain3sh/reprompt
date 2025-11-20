@@ -56,15 +56,24 @@ curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/reprompt"
 chmod +x "$TMP_DIR/reprompt"
 
 # Install
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="$HOME/.local/bin"
 echo "Installing to $INSTALL_DIR ..."
 
-if [ -w "$INSTALL_DIR" ]; then
-    mv "$TMP_DIR/reprompt" "$INSTALL_DIR/reprompt"
-else
-    echo "Sudo permission required to move binary to $INSTALL_DIR"
-    sudo mv "$TMP_DIR/reprompt" "$INSTALL_DIR/reprompt"
+# Create directory if it doesn't exist
+if [ ! -d "$INSTALL_DIR" ]; then
+    mkdir -p "$INSTALL_DIR"
 fi
 
+mv "$TMP_DIR/reprompt" "$INSTALL_DIR/reprompt"
+
 echo "Successfully installed reprompt!"
-echo "Run 'reprompt' to sanitize your clipboard."
+
+# Check PATH
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+    echo "WARNING: $INSTALL_DIR is not in your PATH."
+    echo "Please add the following line to your shell configuration file (e.g., ~/.bashrc, ~/.zshrc):"
+    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+    echo "Then restart your shell or run 'source <config_file>'."
+else
+    echo "Run 'reprompt' to sanitize your clipboard."
+fi

@@ -22,7 +22,7 @@ Download the latest release for your platform from the [Releases Page](https://g
 - **macOS**: `reprompt-macos-amd64`
 - **Windows**: `reprompt-windows-amd64.exe`
 
-Place the binary in your `$PATH` (e.g., `/usr/local/bin` on Linux/macOS).
+Place the binary in your `$PATH` (e.g., `~/.local/bin` or `/usr/local/bin` on Linux/macOS).
 
 ### Build from Source
 
@@ -55,8 +55,8 @@ reprompt
 3. Right-click shortcut -> Properties -> "Shortcut Key". Set to `Ctrl+Alt+V` (or similar).
 
 #### macOS
-1. Move binary to `/usr/local/bin/reprompt`.
-2. Use **Automator**: Create a "Quick Action" -> "Run Shell Script" (`/usr/local/bin/reprompt`) -> Save as "Trim Clipboard".
+1. Move binary to a folder in your PATH (e.g. `~/.local/bin/reprompt`).
+2. Use **Automator**: Create a "Quick Action" -> "Run Shell Script" (`path/to/reprompt`) -> Save as "Trim Clipboard".
 3. Assign Keybind in System Settings -> Keyboard -> Shortcuts -> Services.
 
 #### Linux / WSL
