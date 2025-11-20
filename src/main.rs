@@ -282,9 +282,17 @@ fn unwrap_wrapped_line(line: &str) -> Option<String> {
         left += 1;
     }
 
+    // Find the right border position
     let mut right = len;
+    let right_border_start = right;
     while right > left && is_borderish(chars[right - 1]) {
         right -= 1;
+    }
+
+    // Check if we actually found a right border
+    if right == right_border_start {
+        // No right border found - don't unwrap
+        return None;
     }
 
     while right > left && chars[right - 1].is_whitespace() {
@@ -322,23 +330,47 @@ fn score_candidate(text: &str) -> i64 {
 
 fn scrub_inline_borderish(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
-    let mut in_border = false;
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
 
-    for ch in text.chars() {
+    while i < len {
+        let ch = chars[i];
+        
         if is_borderish(ch) {
-            if !in_border && !result.is_empty() && !result.ends_with(' ') {
-                result.push(' ');
+            // Check if this is part of a run of borderish characters
+            // or if it's an actual box-drawing character (not mojibake)
+            let is_actual_box_drawing = ('\u{2500}'..='\u{257f}').contains(&ch)
+                || ('\u{2580}'..='\u{259f}').contains(&ch)
+                || matches!(
+                    ch,
+                    '╭' | '╮' | '╯' | '╰' | '╔' | '╗' | '╚' | '╝' | '╠' | '╣'
+                        | '╦' | '╩' | '╬' | '╪' | '╫' | '╞' | '╡' | '╥' | '╨'
+                        | '╳' | '│' | '║' | '─' | '━' | '═' | '┼' | '┬' | '┴'
+                        | '├' | '┤' | '┌' | '┐' | '└' | '┘' | '∩' | '╜' | '╛'
+                        | '╓' | '╖' | '╙' | '╘' | '╟' | '?' | '»' | '¿'
+                );
+            
+            // Count consecutive borderish characters
+            let mut run_length = 1;
+            while i + run_length < len && is_borderish(chars[i + run_length]) {
+                run_length += 1;
             }
-            in_border = true;
-            continue;
+            
+            // Only strip if it's actual box-drawing OR a run of 2+ borderish chars
+            // Single mojibake characters (â, Ã, etc.) are preserved
+            if is_actual_box_drawing || run_length >= 2 {
+                // Skip this run of borderish characters
+                if !result.is_empty() && !result.ends_with(' ') {
+                    result.push(' ');
+                }
+                i += run_length;
+                continue;
+            }
         }
-
-        if in_border && !result.is_empty() && !result.ends_with(' ') && !ch.is_whitespace() {
-            result.push(' ');
-        }
-
-        in_border = false;
+        
         result.push(ch);
+        i += 1;
     }
 
     result.trim_end().to_string()
@@ -804,6 +836,55 @@ mod tests {
         // Note: The title line may be partially preserved because '?' is not
         // a border character (and shouldn't be, as it's legitimate punctuation).
         // This is acceptable as the primary goal is to extract the content lines.
+    }
+
+    #[test]
+    fn test_portuguese_words_not_corrupted() {
+        // Test that words starting with mojibake characters (Â, Ã, â, etc.)
+        // are NOT corrupted when they don't have matching right borders
+        let input = "Âmbito é importante\nÃrvore grande\nâncora forte";
+        let cleaned = clean_text(input);
+
+        // Debug output
+        println!("Input: {:?}", input);
+        println!("Cleaned: {:?}", cleaned);
+
+        // These words should remain intact
+        assert!(cleaned.contains("Âmbito"), "Should preserve 'Âmbito', got: {}", cleaned);
+        assert!(cleaned.contains("Ãrvore"), "Should preserve 'Ãrvore', got: {}", cleaned);
+        assert!(cleaned.contains("âncora"), "Should preserve 'âncora', got: {}", cleaned);
+        
+        // The cleaned text should be exactly the same as input (no corruption)
+        assert_eq!(cleaned.trim(), input.trim(), "Text should not be modified");
+    }
+
+    #[test]
+    fn test_unwrap_requires_both_borders() {
+        // Test that unwrap_wrapped_line only unwraps when BOTH borders are present
+        
+        // Case 1: Both borders present - should unwrap
+        let with_both = "│ Content here │";
+        assert_eq!(
+            unwrap_wrapped_line(with_both),
+            Some("Content here".to_string()),
+            "Should unwrap when both borders present"
+        );
+
+        // Case 2: Only left border (Portuguese word) - should NOT unwrap
+        let only_left = "Âmbito é importante";
+        assert_eq!(
+            unwrap_wrapped_line(only_left),
+            None,
+            "Should not unwrap when only left border present"
+        );
+
+        // Case 3: No borders - should NOT unwrap
+        let no_borders = "Regular text";
+        assert_eq!(
+            unwrap_wrapped_line(no_borders),
+            None,
+            "Should not unwrap when no borders present"
+        );
     }
 }
 
