@@ -110,7 +110,6 @@ fn encode_windows_1252(text: &str) -> Option<Vec<u8>> {
             '\u{0178}' => 0x9F,
             ch if (ch as u32) <= 0x7F => ch as u8,
             ch if (0x00A0..=0x00FF).contains(&(ch as u32)) => ch as u8,
-            ch if (0x0080..=0x009F).contains(&(ch as u32)) => ch as u8,
             _ => return None,
         };
 
