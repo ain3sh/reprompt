@@ -1,11 +1,14 @@
-- [x] Reproduce the Claude Code failure case with a new test in `src/main.rs`.
+- [x] Understand and reproduce the new prompt restoration failure case locally (note symptoms and trigger conditions).
 - [x] Review AGENT_REMINDERS.md
-- [x] Re-architect `clean_text` logic:
-    - [x] Handle Titled Borders (e.g. `╭─── Title ───╮`).
-    - [x] Improve ANSI stripping (use a robust regex).
+- [x] Trace the restore logic end-to-end to locate encoding/algorithm bugs; jot hypotheses here.
 - [x] Review AGENT_REMINDERS.md
-- [x] Fix Encoding Corruption in WSL:
-    - [x] Implement Base64-based transfer for `get_clipboard` (PowerShell).
-    - [x] Implement Base64-based transfer for `set_clipboard` (PowerShell).
+- [x] Design and implement a robust prompt restoration strategy (avoid duct-tape fixes); document reasoning in code/tests.
 - [x] Review AGENT_REMINDERS.md
-- [x] Verify all tests pass.
+- [x] Add/extend tests covering the failure case and edge scenarios; ensure they exercise real code paths.
+- [x] Review AGENT_REMINDERS.md
+- [x] Verify the full test suite passes and the failure is resolved.
+- [x] Review AGENT_REMINDERS.md
+
+Scratchpad notes:
+- The failure reproduced as mojibake-heavy borders that the original regex ignored; top/bottom lines slipped through and ∩┐╜ tokens stayed in-line.
+- Implemented cp1252 round-trip recovery and inline border scrubbing to rehabilitate corrupted glyphs before stripping wrappers.
