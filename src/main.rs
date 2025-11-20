@@ -289,7 +289,7 @@ fn unwrap_wrapped_line(line: &str) -> Option<String> {
     }
 
     // Check if we actually found a right border
-    if right >= right_border_start {
+    if right == right_border_start {
         // No right border found - don't unwrap
         return None;
     }
