@@ -8,3 +8,5 @@
 - [x] View AGENT_REMINDERS.md
 - [x] Pre-commit checks
 - [x] View AGENT_REMINDERS.md
+- [x] Fix GitHub Actions Workflow triggers
+- [x] View AGENT_REMINDERS.md
