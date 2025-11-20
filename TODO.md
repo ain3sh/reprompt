@@ -10,3 +10,11 @@
 - [x] View AGENT_REMINDERS.md
 - [x] Fix GitHub Actions Workflow triggers
 - [x] View AGENT_REMINDERS.md
+- [x] Create `scripts/install.sh`
+- [x] View AGENT_REMINDERS.md
+- [x] Update `README.md`
+- [x] View AGENT_REMINDERS.md
+- [x] Verify installation script logic
+- [x] View AGENT_REMINDERS.md
+- [x] Run pre-commit checks
+- [x] View AGENT_REMINDERS.md
