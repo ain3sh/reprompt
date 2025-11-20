@@ -28,17 +28,37 @@ fn is_wsl_custom() -> bool {
 /// Handles Native (arboard) and WSL (powershell) environments.
 fn get_clipboard() -> Result<String> {
     if is_wsl_custom() {
-        let output = Command::new("powershell.exe")
+        // Try PowerShell first (WSL interop)
+        match Command::new("powershell.exe")
             .args(["-NoProfile", "-Command", "Get-Clipboard"])
-            .output()?;
-
-        if !output.status.success() {
-            return Err(anyhow::anyhow!("PowerShell Get-Clipboard failed: {}", String::from_utf8_lossy(&output.stderr)));
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                let text = String::from_utf8_lossy(&output.stdout).to_string();
+                // Normalize line endings from CRLF to LF
+                return Ok(text.replace("\r\n", "\n"));
+            }
+            Ok(output) => {
+                // PowerShell ran but failed
+                return Err(anyhow::anyhow!(
+                    "PowerShell Get-Clipboard failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // powershell.exe not found - WSL interop likely disabled
+                // Fall back to arboard
+                eprintln!("Warning: WSL detected but powershell.exe not found.");
+                eprintln!("Windows interop may be disabled. Falling back to native clipboard.");
+                eprintln!("To fix: Check /etc/wsl.conf has [interop] enabled=true");
+                let mut clipboard = arboard::Clipboard::new()?;
+                return Ok(clipboard.get_text()?);
+            }
+            Err(e) => {
+                // Other error running powershell.exe
+                return Err(e.into());
+            }
         }
-
-        let text = String::from_utf8_lossy(&output.stdout).to_string();
-        // Normalize line endings from CRLF to LF
-        Ok(text.replace("\r\n", "\n"))
     } else {
         let mut clipboard = arboard::Clipboard::new()?;
         Ok(clipboard.get_text()?)
@@ -49,19 +69,37 @@ fn get_clipboard() -> Result<String> {
 /// Handles Native (arboard) and WSL (clip.exe) environments.
 fn set_clipboard(data: &str) -> Result<()> {
     if is_wsl_custom() {
-        let mut child = Command::new("clip.exe")
+        // Try clip.exe first (WSL interop)
+        match Command::new("clip.exe")
             .stdin(Stdio::piped())
-            .spawn()?;
+            .spawn()
+        {
+            Ok(mut child) => {
+                let mut stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("Failed to open stdin for clip.exe"))?;
+                stdin.write_all(data.as_bytes())?;
+                drop(stdin); // Close stdin to signal EOF
 
-        let mut stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("Failed to open stdin for clip.exe"))?;
-        stdin.write_all(data.as_bytes())?;
-        drop(stdin); // Close stdin to signal EOF
-
-        let status = child.wait()?;
-        if !status.success() {
-             return Err(anyhow::anyhow!("clip.exe failed"));
+                let status = child.wait()?;
+                if !status.success() {
+                    return Err(anyhow::anyhow!("clip.exe failed"));
+                }
+                Ok(())
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // clip.exe not found - WSL interop likely disabled
+                // Fall back to arboard
+                eprintln!("Warning: WSL detected but clip.exe not found.");
+                eprintln!("Windows interop may be disabled. Falling back to native clipboard.");
+                eprintln!("To fix: Check /etc/wsl.conf has [interop] enabled=true");
+                let mut clipboard = arboard::Clipboard::new()?;
+                clipboard.set_text(data)?;
+                Ok(())
+            }
+            Err(e) => {
+                // Other error spawning clip.exe
+                Err(e.into())
+            }
         }
-        Ok(())
     } else {
         let mut clipboard = arboard::Clipboard::new()?;
         clipboard.set_text(data)?;
