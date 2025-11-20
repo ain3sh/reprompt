@@ -29,7 +29,7 @@ fn is_wsl_custom() -> bool {
 fn get_clipboard() -> Result<String> {
     if is_wsl_custom() {
         let output = Command::new("powershell.exe")
-            .args(&["-NoProfile", "-Command", "Get-Clipboard"])
+            .args(["-NoProfile", "-Command", "Get-Clipboard"])
             .output()?;
 
         if !output.status.success() {

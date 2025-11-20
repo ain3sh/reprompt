@@ -1,22 +1,10 @@
-- [x] Setup: `cargo init` and dependencies [Done: `cargo init`]
+- [x] Fetch PR comments [No pending comments found via tool, inspected code manually]
 - [x] View AGENT_REMINDERS.md
-- [x] Add dependencies to Cargo.toml
+- [x] Analyze comments and plan fixes [Identified edition 2024 -> 2021 and clippy lint]
 - [x] View AGENT_REMINDERS.md
-- [x] Implement `clean_text` regex logic
+- [x] Apply fixes for PR comments
 - [x] View AGENT_REMINDERS.md
-- [x] Add unit tests for `clean_text`
+- [x] Verify changes and run tests
 - [x] View AGENT_REMINDERS.md
-- [x] Implement `is_wsl` check
-- [x] View AGENT_REMINDERS.md
-- [x] Implement `get_clipboard` (WSL + Native)
-- [x] View AGENT_REMINDERS.md
-- [x] Implement `set_clipboard` (WSL + Native)
-- [x] View AGENT_REMINDERS.md
-- [x] Wire up `main` loop
-- [x] View AGENT_REMINDERS.md
-- [x] Verify build and tests
-- [x] View AGENT_REMINDERS.md
-- [x] Test Reprompt locally (Clipboard verification)
-- [x] View AGENT_REMINDERS.md
-- [x] Create GitHub Actions Workflow
+- [x] Pre-commit checks
 - [x] View AGENT_REMINDERS.md
