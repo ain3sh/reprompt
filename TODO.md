@@ -2,3 +2,5 @@
 - [x] Review AGENT_REMINDERS.md
 - [x] Update README.md and SPEC.md
 - [x] Review AGENT_REMINDERS.md
+- [x] Auto-add to PATH in .bashrc/.zshrc
+- [x] Review AGENT_REMINDERS.md

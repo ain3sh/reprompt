@@ -71,9 +71,39 @@ echo "Successfully installed reprompt!"
 # Check PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo "WARNING: $INSTALL_DIR is not in your PATH."
-    echo "Please add the following line to your shell configuration file (e.g., ~/.bashrc, ~/.zshrc):"
-    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-    echo "Then restart your shell or run 'source <config_file>'."
+    echo "Attempting to add it to your shell configuration..."
+
+    EXPORT_CMD="export PATH=\"\$HOME/.local/bin:\$PATH\""
+    UPDATED_CONFIG=0
+
+    # Function to update config file
+    update_config() {
+        local config="$1"
+        if [ -f "$config" ]; then
+            if grep -q ".local/bin" "$config"; then
+                echo "  - $config: Already contains .local/bin"
+            else
+                echo "  - $config: Appending to PATH..."
+                echo "" >> "$config"
+                echo "# Added by reprompt installer" >> "$config"
+                echo "$EXPORT_CMD" >> "$config"
+                UPDATED_CONFIG=1
+            fi
+        fi
+    }
+
+    # Check common shell configs
+    update_config "$HOME/.bashrc"
+    update_config "$HOME/.zshrc"
+
+    if [ $UPDATED_CONFIG -eq 1 ]; then
+        echo "Successfully updated shell configuration."
+        echo "Please restart your terminal or run 'source <your_shell_config>' to apply."
+    else
+        echo "Could not detect or update .bashrc / .zshrc."
+        echo "Please manually add the following line to your shell configuration:"
+        echo "  $EXPORT_CMD"
+    fi
 else
     echo "Run 'reprompt' to sanitize your clipboard."
 fi
