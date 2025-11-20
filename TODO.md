@@ -16,3 +16,7 @@
 - [x] View AGENT_REMINDERS.md
 - [x] Verify build and tests
 - [x] View AGENT_REMINDERS.md
+- [x] Test Reprompt locally (Clipboard verification)
+- [x] View AGENT_REMINDERS.md
+- [x] Create GitHub Actions Workflow
+- [x] View AGENT_REMINDERS.md
