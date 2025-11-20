@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
-use regex::Regex;
-use lazy_static::lazy_static;
-use std::process::{Command, Stdio};
-use std::io::Write;
 use base64::prelude::*;
+use lazy_static::lazy_static;
+use regex::Regex;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 lazy_static! {
     static ref RE_BORDER_LINE: Regex = Regex::new(r"^[\s╭╮╰╯─═━┌┐└┘]+$").expect("Invalid Border Line Regex");
@@ -34,6 +34,389 @@ lazy_static! {
     static ref RE_ANSI: Regex = Regex::new(r"[\x1b\x9b][\[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]").expect("Invalid ANSI Regex");
 }
 
+const WINDOWS_1252_DECODE: [char; 256] = [
+    '\u{0000}', '\u{0001}', '\u{0002}', '\u{0003}', '\u{0004}', '\u{0005}', '\u{0006}', '\u{0007}',
+    '\u{0008}', '\u{0009}', '\u{000A}', '\u{000B}', '\u{000C}', '\u{000D}', '\u{000E}', '\u{000F}',
+    '\u{0010}', '\u{0011}', '\u{0012}', '\u{0013}', '\u{0014}', '\u{0015}', '\u{0016}', '\u{0017}',
+    '\u{0018}', '\u{0019}', '\u{001A}', '\u{001B}', '\u{001C}', '\u{001D}', '\u{001E}', '\u{001F}',
+    '\u{0020}', '\u{0021}', '\u{0022}', '\u{0023}', '\u{0024}', '\u{0025}', '\u{0026}', '\u{0027}',
+    '\u{0028}', '\u{0029}', '\u{002A}', '\u{002B}', '\u{002C}', '\u{002D}', '\u{002E}', '\u{002F}',
+    '\u{0030}', '\u{0031}', '\u{0032}', '\u{0033}', '\u{0034}', '\u{0035}', '\u{0036}', '\u{0037}',
+    '\u{0038}', '\u{0039}', '\u{003A}', '\u{003B}', '\u{003C}', '\u{003D}', '\u{003E}', '\u{003F}',
+    '\u{0040}', '\u{0041}', '\u{0042}', '\u{0043}', '\u{0044}', '\u{0045}', '\u{0046}', '\u{0047}',
+    '\u{0048}', '\u{0049}', '\u{004A}', '\u{004B}', '\u{004C}', '\u{004D}', '\u{004E}', '\u{004F}',
+    '\u{0050}', '\u{0051}', '\u{0052}', '\u{0053}', '\u{0054}', '\u{0055}', '\u{0056}', '\u{0057}',
+    '\u{0058}', '\u{0059}', '\u{005A}', '\u{005B}', '\u{005C}', '\u{005D}', '\u{005E}', '\u{005F}',
+    '\u{0060}', '\u{0061}', '\u{0062}', '\u{0063}', '\u{0064}', '\u{0065}', '\u{0066}', '\u{0067}',
+    '\u{0068}', '\u{0069}', '\u{006A}', '\u{006B}', '\u{006C}', '\u{006D}', '\u{006E}', '\u{006F}',
+    '\u{0070}', '\u{0071}', '\u{0072}', '\u{0073}', '\u{0074}', '\u{0075}', '\u{0076}', '\u{0077}',
+    '\u{0078}', '\u{0079}', '\u{007A}', '\u{007B}', '\u{007C}', '\u{007D}', '\u{007E}', '\u{007F}',
+    '\u{20AC}', '\u{0081}', '\u{201A}', '\u{0192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}',
+    '\u{02C6}', '\u{2030}', '\u{0160}', '\u{2039}', '\u{0152}', '\u{008D}', '\u{017D}', '\u{008F}',
+    '\u{0090}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}',
+    '\u{02DC}', '\u{2122}', '\u{0161}', '\u{203A}', '\u{0153}', '\u{009D}', '\u{017E}', '\u{0178}',
+    '\u{00A0}', '\u{00A1}', '\u{00A2}', '\u{00A3}', '\u{00A4}', '\u{00A5}', '\u{00A6}', '\u{00A7}',
+    '\u{00A8}', '\u{00A9}', '\u{00AA}', '\u{00AB}', '\u{00AC}', '\u{00AD}', '\u{00AE}', '\u{00AF}',
+    '\u{00B0}', '\u{00B1}', '\u{00B2}', '\u{00B3}', '\u{00B4}', '\u{00B5}', '\u{00B6}', '\u{00B7}',
+    '\u{00B8}', '\u{00B9}', '\u{00BA}', '\u{00BB}', '\u{00BC}', '\u{00BD}', '\u{00BE}', '\u{00BF}',
+    '\u{00C0}', '\u{00C1}', '\u{00C2}', '\u{00C3}', '\u{00C4}', '\u{00C5}', '\u{00C6}', '\u{00C7}',
+    '\u{00C8}', '\u{00C9}', '\u{00CA}', '\u{00CB}', '\u{00CC}', '\u{00CD}', '\u{00CE}', '\u{00CF}',
+    '\u{00D0}', '\u{00D1}', '\u{00D2}', '\u{00D3}', '\u{00D4}', '\u{00D5}', '\u{00D6}', '\u{00D7}',
+    '\u{00D8}', '\u{00D9}', '\u{00DA}', '\u{00DB}', '\u{00DC}', '\u{00DD}', '\u{00DE}', '\u{00DF}',
+    '\u{00E0}', '\u{00E1}', '\u{00E2}', '\u{00E3}', '\u{00E4}', '\u{00E5}', '\u{00E6}', '\u{00E7}',
+    '\u{00E8}', '\u{00E9}', '\u{00EA}', '\u{00EB}', '\u{00EC}', '\u{00ED}', '\u{00EE}', '\u{00EF}',
+    '\u{00F0}', '\u{00F1}', '\u{00F2}', '\u{00F3}', '\u{00F4}', '\u{00F5}', '\u{00F6}', '\u{00F7}',
+    '\u{00F8}', '\u{00F9}', '\u{00FA}', '\u{00FB}', '\u{00FC}', '\u{00FD}', '\u{00FE}', '\u{00FF}',
+];
+
+fn decode_windows_1252(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| WINDOWS_1252_DECODE[*b as usize])
+        .collect()
+}
+
+fn encode_windows_1252(text: &str) -> Option<Vec<u8>> {
+    let mut output = Vec::with_capacity(text.len());
+
+    for ch in text.chars() {
+        let byte = match ch {
+            '\u{20AC}' => 0x80,
+            '\u{201A}' => 0x82,
+            '\u{0192}' => 0x83,
+            '\u{201E}' => 0x84,
+            '\u{2026}' => 0x85,
+            '\u{2020}' => 0x86,
+            '\u{2021}' => 0x87,
+            '\u{02C6}' => 0x88,
+            '\u{2030}' => 0x89,
+            '\u{0160}' => 0x8A,
+            '\u{2039}' => 0x8B,
+            '\u{0152}' => 0x8C,
+            '\u{017D}' => 0x8E,
+            '\u{2018}' => 0x91,
+            '\u{2019}' => 0x92,
+            '\u{201C}' => 0x93,
+            '\u{201D}' => 0x94,
+            '\u{2022}' => 0x95,
+            '\u{2013}' => 0x96,
+            '\u{2014}' => 0x97,
+            '\u{02DC}' => 0x98,
+            '\u{2122}' => 0x99,
+            '\u{0161}' => 0x9A,
+            '\u{203A}' => 0x9B,
+            '\u{0153}' => 0x9C,
+            '\u{017E}' => 0x9E,
+            '\u{0178}' => 0x9F,
+            ch if (ch as u32) <= 0x7F => ch as u8,
+            ch if (0x00A0..=0x00FF).contains(&(ch as u32)) => ch as u8,
+            ch if (0x0080..=0x009F).contains(&(ch as u32)) => ch as u8,
+            _ => return None,
+        };
+
+        output.push(byte);
+    }
+
+    Some(output)
+}
+
+/// Produces alternate interpretations of the incoming text so we can recover from
+/// mojibake before stripping borders.
+fn normalize_variants(input: &str) -> Vec<String> {
+    let mut variants = Vec::new();
+
+    // Remove a potential BOM and reuse as the baseline candidate
+    let baseline = input.trim_start_matches('\u{feff}').to_string();
+    variants.push(baseline.clone());
+
+    // If the text looks like UTF-8 bytes that were decoded as Windows-1252
+    // (common when copying from Windows apps into WSL), try to rehydrate the
+    // original UTF-8. We pick this candidate only if it successfully round-trips
+    // back into valid UTF-8 bytes.
+    if let Some(repaired) = recover_from_cp1252_mojibake(&baseline) {
+        if repaired != baseline {
+            variants.push(repaired);
+        }
+    }
+
+    variants
+}
+
+/// Attempts to reverse common mojibake by treating the text as if UTF-8 bytes
+/// were decoded with Windows-1252 and then re-encoded to UTF-8. If that yields
+/// a valid UTF-8 string, return it.
+fn recover_from_cp1252_mojibake(input: &str) -> Option<String> {
+    let encoded = encode_windows_1252(input)?;
+    String::from_utf8(encoded).ok()
+}
+
+fn is_borderish(ch: char) -> bool {
+    // True for box drawing characters, heavy line art, and characters commonly
+    // seen when those glyphs are mis-decoded (Ã, â, etc.).
+    (('\u{2500}'..='\u{257f}').contains(&ch))
+        || (('\u{2580}'..='\u{259f}').contains(&ch))
+        || matches!(
+            ch,
+            '╭' | '╮'
+                | '╯'
+                | '╰'
+                | '╔'
+                | '╗'
+                | '╚'
+                | '╝'
+                | '╠'
+                | '╣'
+                | '╦'
+                | '╩'
+                | '╬'
+                | '╪'
+                | '╫'
+                | '╞'
+                | '╡'
+                | '╥'
+                | '╨'
+                | '╳'
+                | '│'
+                | '║'
+                | '─'
+                | '━'
+                | '═'
+                | '┼'
+                | '┬'
+                | '┴'
+                | '├'
+                | '┤'
+                | '┌'
+                | '┐'
+                | '└'
+                | '┘'
+                | '∩'
+                | '╜'
+                | '╛'
+                | '╓'
+                | '╖'
+                | '╙'
+                | '╘'
+                | '╟'
+                | '?'
+                | 'â'
+                | 'Ã'
+                | 'ã'
+                | 'Â'
+                | 'ï'
+                | '»'
+                | '¿'
+        )
+}
+
+fn is_mostly_borderish(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let mut borderish = 0usize;
+    let mut alnum = 0usize;
+    let mut printable = 0usize;
+    let mut longest_border_run = 0usize;
+    let mut current_border_run = 0usize;
+
+    for ch in trimmed.chars() {
+        if ch.is_control() {
+            continue;
+        }
+        printable += 1;
+        if is_borderish(ch) {
+            borderish += 1;
+            current_border_run += 1;
+            longest_border_run = longest_border_run.max(current_border_run);
+        }
+        if ch.is_alphanumeric() {
+            alnum += 1;
+        }
+        if !is_borderish(ch) {
+            current_border_run = 0;
+        }
+    }
+
+    if printable == 0 {
+        return false;
+    }
+
+    let border_ratio_high = borderish * 4 >= printable * 3; // >=75%
+    let starts_with_border = trimmed.chars().next().map(is_borderish).unwrap_or(false);
+    let ends_with_border = trimmed.chars().last().map(is_borderish).unwrap_or(false);
+    let border_frames_text = starts_with_border && ends_with_border && borderish > alnum;
+    let border_dominates = starts_with_border && ends_with_border && borderish * 2 >= printable;
+    let strong_border_run = starts_with_border
+        && ends_with_border
+        && longest_border_run >= 3
+        && borderish * 2 > printable;
+
+    border_ratio_high || border_frames_text || border_dominates || strong_border_run
+}
+
+fn unwrap_wrapped_line(line: &str) -> Option<String> {
+    let stripped_leading = line.trim_start_matches('\u{feff}');
+    if stripped_leading.is_empty() {
+        return Some(String::new());
+    }
+
+    let chars: Vec<char> = stripped_leading.chars().collect();
+    let len = chars.len();
+
+    // Detect an opening run of border glyphs (after any indentation)
+    let mut left = 0;
+    while left < len && is_borderish(chars[left]) {
+        left += 1;
+    }
+
+    if left == 0 {
+        // Not wrapped with border characters on the left
+        return None;
+    }
+
+    // Skip a single padding space if present after the left border
+    if left < len && chars[left] == ' ' {
+        left += 1;
+    }
+
+    let mut right = len;
+    while right > left && is_borderish(chars[right - 1]) {
+        right -= 1;
+    }
+
+    while right > left && chars[right - 1].is_whitespace() {
+        right -= 1;
+    }
+
+    if right <= left {
+        return Some(String::new());
+    }
+
+    let content: String = chars[left..right].iter().collect();
+    Some(content)
+}
+
+fn score_candidate(text: &str) -> i64 {
+    let mut score: i64 = 0;
+    for ch in text.chars() {
+        if ch == '\u{FFFD}' {
+            score -= 10; // replacement character indicates corruption
+        } else if is_borderish(ch) {
+            score -= 2;
+        } else if ch.is_alphanumeric() {
+            score += 4;
+        } else if ch.is_ascii_punctuation() {
+            score += 2;
+        } else if ch.is_whitespace() {
+            score += 1;
+        } else {
+            score -= 1;
+        }
+    }
+
+    score
+}
+
+fn scrub_inline_borderish(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut in_border = false;
+
+    for ch in text.chars() {
+        if is_borderish(ch) {
+            if !in_border && !result.is_empty() && !result.ends_with(' ') {
+                result.push(' ');
+            }
+            in_border = true;
+            continue;
+        }
+
+        if in_border && !result.is_empty() && !result.ends_with(' ') && !ch.is_whitespace() {
+            result.push(' ');
+        }
+
+        in_border = false;
+        result.push(ch);
+    }
+
+    result.trim_end().to_string()
+}
+
+fn push_content_line(
+    output: &mut String,
+    first: &mut bool,
+    consecutive_empty: &mut usize,
+    content: &str,
+) {
+    let trimmed = content.trim_end();
+    if trimmed.trim().is_empty() {
+        *consecutive_empty += 1;
+        if *consecutive_empty > 2 {
+            return;
+        }
+    } else {
+        *consecutive_empty = 0;
+    }
+
+    if !*first {
+        output.push('\n');
+    }
+
+    output.push_str(trimmed);
+    *first = false;
+}
+
+fn strip_tui_lines(input: &str) -> String {
+    let mut output = String::new();
+    let mut first = true;
+    let mut consecutive_empty = 0usize;
+
+    for line in input.lines() {
+        if is_mostly_borderish(line)
+            || RE_BORDER_LINE.is_match(line)
+            || RE_TITLED_BORDER.is_match(line)
+        {
+            continue;
+        }
+
+        if let Some(unwrapped) = unwrap_wrapped_line(line) {
+            let cleaned_line = scrub_inline_borderish(&unwrapped);
+            push_content_line(
+                &mut output,
+                &mut first,
+                &mut consecutive_empty,
+                &cleaned_line,
+            );
+            continue;
+        }
+
+        if let Some(caps) = RE_CONTENT_WRAPPER.captures(line) {
+            if let Some(content) = caps.name("content") {
+                let cleaned_line = scrub_inline_borderish(content.as_str());
+                push_content_line(
+                    &mut output,
+                    &mut first,
+                    &mut consecutive_empty,
+                    &cleaned_line,
+                );
+                continue;
+            }
+        }
+
+        // Fallback: retain the line as-is, but still enforce empty-line coalescing
+        let cleaned_line = scrub_inline_borderish(line);
+        push_content_line(
+            &mut output,
+            &mut first,
+            &mut consecutive_empty,
+            &cleaned_line,
+        );
+    }
+
+    output.trim_end().to_string()
+}
+
 /// Represents a clipboard transaction with rollback capability
 struct ClipboardTransaction {
     original: String,
@@ -62,7 +445,9 @@ impl ClipboardTransaction {
 
     /// Validates that the modified content is not corrupted
     fn validate(&self) -> Result<()> {
-        let modified = self.modified.as_ref()
+        let modified = self
+            .modified
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No modified content to validate"))?;
 
         // Bail on Unicode replacement character (U+FFFD indicates encoding corruption)
@@ -82,8 +467,11 @@ impl ClipboardTransaction {
         // Sanity check: if cleaned text is dramatically shorter (>90% reduction),
         // and original was substantial, we might have over-cleaned
         if self.original.len() > 200 && modified.len() < self.original.len() / 10 {
-            eprintln!("Warning: Cleaning reduced content by >90% ({} -> {} bytes)",
-                     self.original.len(), modified.len());
+            eprintln!(
+                "Warning: Cleaning reduced content by >90% ({} -> {} bytes)",
+                self.original.len(),
+                modified.len()
+            );
             eprintln!("This might indicate over-aggressive cleaning.");
         }
 
@@ -92,7 +480,8 @@ impl ClipboardTransaction {
 
     /// Commits the transaction by writing to clipboard with validation
     fn commit(self) -> Result<()> {
-        let modified = self.modified
+        let modified = self
+            .modified
             .ok_or_else(|| anyhow::anyhow!("No modified content to commit"))?;
 
         // If content is identical, skip write
@@ -126,9 +515,14 @@ impl ClipboardTransaction {
                 let readback_normalized = readback.trim_end();
 
                 if readback_normalized != expected_normalized {
-                    eprintln!("Verification failed: Clipboard content doesn't match expected result");
-                    eprintln!("Expected {} bytes, got {} bytes",
-                             expected_normalized.len(), readback_normalized.len());
+                    eprintln!(
+                        "Verification failed: Clipboard content doesn't match expected result"
+                    );
+                    eprintln!(
+                        "Expected {} bytes, got {} bytes",
+                        expected_normalized.len(),
+                        readback_normalized.len()
+                    );
                     eprintln!("Attempting rollback...");
                     if let Err(rollback_err) = set_clipboard(&self.original) {
                         eprintln!("CRITICAL: Rollback failed: {}", rollback_err);
@@ -146,7 +540,6 @@ impl ClipboardTransaction {
 
         Ok(())
     }
-
 }
 
 /// Checks if the program is running inside WSL.
@@ -292,74 +685,24 @@ fn set_clipboard(data: &str) -> Result<()> {
 
 /// Cleans the input text by removing TUI artifacts (borders, ANSI codes).
 fn clean_text(input: &str) -> String {
-    // First pass: strip ANSI escape codes (colors, cursor movement, etc.)
-    // Many TUI applications add these for visual formatting
-    let ansi_stripped = RE_ANSI.replace_all(input, "");
+    let mut best = String::new();
+    let mut best_score = i64::MIN;
 
-    let mut output = String::new();
-    let mut first = true;
-    let mut consecutive_empty = 0;
+    for variant in normalize_variants(input) {
+        // First pass: strip ANSI escape codes (colors, cursor movement, etc.)
+        let ansi_stripped = RE_ANSI.replace_all(&variant, "");
 
-    for line in ansi_stripped.lines() {
-        // Check if this is a pure border line (top/bottom of box)
-        if RE_BORDER_LINE.is_match(line) {
-            continue;
-        }
+        // Second pass: remove TUI borders/content wrappers with heuristics
+        let cleaned = strip_tui_lines(&ansi_stripped);
 
-        // Check if this is a titled border line (top/bottom with text)
-        if RE_TITLED_BORDER.is_match(line) {
-            continue;
-        }
-
-        // Check if this is a content line wrapped in borders
-        if let Some(caps) = RE_CONTENT_WRAPPER.captures(line) {
-            if let Some(content) = caps.name("content") {
-                let content_str = content.as_str();
-
-                // Only trim trailing spaces (TUI padding), preserve leading spaces (indentation)
-                // trim_end() removes the padding spaces that TUIs add to reach the right border
-                let trimmed = content_str.trim_end();
-
-                // Track consecutive empty lines to avoid bloat (apply limit globally)
-                if trimmed.is_empty() {
-                    consecutive_empty += 1;
-                    if consecutive_empty > 2 {
-                        continue; // Skip excessive empty lines from wrapped content too
-                    }
-                } else {
-                    consecutive_empty = 0;
-                }
-
-                if !first {
-                    output.push('\n');
-                }
-                output.push_str(trimmed);
-                first = false;
-            }
-        } else {
-            // Line doesn't match any TUI pattern - preserve as-is
-            // This handles regular text, markdown, code, etc.
-
-            // Limit consecutive empty lines to avoid bloat from TUI spacing
-            if line.trim().is_empty() {
-                consecutive_empty += 1;
-                if consecutive_empty > 2 {
-                    continue; // Skip excessive empty lines
-                }
-            } else {
-                consecutive_empty = 0;
-            }
-
-            if !first {
-                output.push('\n');
-            }
-            output.push_str(line);
-            first = false;
+        let score = score_candidate(&cleaned);
+        if score > best_score {
+            best_score = score;
+            best = cleaned;
         }
     }
 
-    // Final cleanup: remove any trailing whitespace the TUI might have added
-    output.trim_end().to_string()
+    best.trim_end().to_string()
 }
 
 #[cfg(test)]
@@ -383,10 +726,19 @@ mod tests {
 
         println!("Cleaned Output:\n{}", cleaned);
 
-        assert!(cleaned.contains(expected_contains), "Should contain content");
-        assert!(!cleaned.contains("Claude Code v2.0.47"), "Should remove titled top border");
+        assert!(
+            cleaned.contains(expected_contains),
+            "Should contain content"
+        );
+        assert!(
+            !cleaned.contains("Claude Code v2.0.47"),
+            "Should remove titled top border"
+        );
         assert!(!cleaned.contains("╰───"), "Should remove bottom border");
-        assert!(!cleaned.contains("│     Welcome"), "Should remove left border");
+        assert!(
+            !cleaned.contains("│     Welcome"),
+            "Should remove left border"
+        );
     }
 
     #[test]
@@ -405,6 +757,33 @@ mod tests {
         let input = "│ let x = a | b; │";
         let cleaned = clean_text(input);
         assert_eq!(cleaned, "let x = a | b;");
+    }
+
+    #[test]
+    fn test_recovers_from_cp1252_mojibake() {
+        let original =
+            "╭─── Claude Code v2.0.47 ───╮\n│ Welcome back Ainesh! │\n╰───────────────────────╯";
+        let corrupted = decode_windows_1252(original.as_bytes());
+
+        // Ensure we actually produced mojibake
+        assert_ne!(corrupted, original);
+
+        let cleaned = clean_text(&corrupted);
+        assert!(cleaned.contains("Welcome back Ainesh!"));
+        assert!(!cleaned.contains("â"));
+    }
+
+    #[test]
+    fn test_recovers_from_intersection_gibberish() {
+        let gibberish = "?∩┐╜∩┐╜∩┐╜ Claude Code v2.0.47 ∩┐╜∩┐╜∩┐╜\n∩┐╜ Recent activity ∩┐╜\n∩┐╜ Welcome back Ainesh! ∩┐╜ No recent activity ∩┐╜\n∩┐╜ What's new ∩┐╜\n∩┐╜ /home/ain3sh ∩┐╜";
+
+        let cleaned = clean_text(gibberish);
+
+        assert!(cleaned.contains("Welcome back Ainesh!"));
+        assert!(cleaned.contains("No recent activity"));
+        assert!(cleaned.contains("What's new"));
+        assert!(!cleaned.contains("Claude Code v2.0.47"));
+        assert!(!cleaned.contains("∩┐╜"));
     }
 }
 
