@@ -10,7 +10,9 @@ It is designed to help when copying text from terminal UIs (like AI agents, logs
 
 ```bash
 curl -fsSL https://ain3sh.com/reprompt/install.sh | bash
-# equivalent to
+```
+equivalent to
+```bash
 curl -fsSL https://raw.githubusercontent.com/ain3sh/reprompt/main/scripts/install.sh | bash
 ```
 
