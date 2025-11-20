@@ -3,9 +3,24 @@ use regex::Regex;
 use lazy_static::lazy_static;
 use std::process::{Command, Stdio};
 use std::io::Write;
+use base64::prelude::*;
 
 lazy_static! {
-    static ref RE_BORDER_LINE: Regex = Regex::new(r"^[\s╭╮╰╯─═━┌┐└┘]+$").expect("Invalid Border Line Regex");
+    // Matches lines consisting entirely of box drawing characters (and whitespace)
+    static ref RE_BORDER_LINE: Regex = Regex::new(r"^[\s\u{2500}-\u{257f}]+$").expect("Invalid Border Line Regex");
+
+    // Handles borders that have text embedded, e.g., "╭─── Title ───╮"
+    // Matches any line starting and ending with Box Drawing chars (excluding pure verticals),
+    // and containing at least 3 horizontal bars.
+    // Note: We use set subtraction to exclude vertical bars to avoid matching content lines like "│ Text │"
+    static ref RE_TITLED_BORDER: Regex = Regex::new(r"(?x)
+        ^[\s\u{2500}-\u{257f}--[│║┃┆┊╎╏┋╵╷]] # Start with box char but not vertical
+        (?:.*?)             # Content (title, etc.)
+        [─═━]{3,}           # Must contain at least 3 horizontal bars
+        (?:.*?)             # More content
+        [\u{2500}-\u{257f}--[│║┃┆┊╎╏┋╵╷]]\s*$ # End with box char but not vertical
+    ").expect("Invalid Titled Border Regex");
+
     static ref RE_CONTENT_WRAPPER: Regex = Regex::new(r"(?x)
         ^
         \s*           # Start of line, optional indentation
@@ -18,8 +33,13 @@ lazy_static! {
         $
     ").expect("Invalid Content Wrapper Regex");
 
-    // ANSI escape codes (colors, formatting) that TUIs often add
-    static ref RE_ANSI: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").expect("Invalid ANSI Regex");
+    // Improved ANSI escape codes regex
+    // Matches standard CSI sequences and OSC sequences (window title, hyperlinks, etc.)
+    static ref RE_ANSI: Regex = Regex::new(r"(?x)
+        (?:\x1b\[|\x9b)[0-9;?]*[ -/]*[@-~]   # CSI
+        |
+        (?:\x1b\]|\x9d).*?(?:\x07|\x1b\\)    # OSC
+    ").expect("Invalid ANSI Regex");
 }
 
 /// Represents a clipboard transaction with rollback capability
@@ -146,24 +166,25 @@ fn is_wsl_custom() -> bool {
 /// Handles Native (arboard) and WSL (powershell) environments.
 fn get_clipboard() -> Result<String> {
     if is_wsl_custom() {
-        // Try PowerShell first (WSL interop) with explicit UTF-8 encoding
+        // Try PowerShell first (WSL interop) with explicit UTF-8 encoding via Base64 transfer
+        // This avoids all code page issues by transferring ASCII Base64 over the pipe.
         match Command::new("powershell.exe")
             .args([
                 "-NoProfile",
                 "-Command",
-                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard"
+                "$b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(($OFS=\"`n\"; \"$(Get-Clipboard)\"))); Write-Output $b64"
             ])
             .output()
         {
             Ok(output) if output.status.success() => {
-                // Explicitly handle UTF-8 decoding
-                let text = match String::from_utf8(output.stdout) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        eprintln!("Warning: Invalid UTF-8 from PowerShell, using lossy conversion");
-                        String::from_utf8_lossy(&e.into_bytes()).to_string()
-                    }
-                };
+                let base64_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+                // Decode Base64
+                let decoded_bytes = BASE64_STANDARD.decode(&base64_str)
+                    .context("Failed to decode Base64 from PowerShell")?;
+
+                let text = String::from_utf8(decoded_bytes)
+                    .context("Decoded Base64 is not valid UTF-8")?;
 
                 // Normalize line endings from CRLF to LF
                 let normalized = text.replace("\r\n", "\n");
@@ -204,14 +225,12 @@ fn get_clipboard() -> Result<String> {
 /// Handles Native (arboard) and WSL (clip.exe) environments.
 fn set_clipboard(data: &str) -> Result<()> {
     if is_wsl_custom() {
-        // Use PowerShell Set-Clipboard for better encoding support
-        // clip.exe can have encoding issues with UTF-8
-        // CRITICAL: Set InputEncoding to UTF-8 for pipeline input to prevent mojibake
+        // Use PowerShell with Base64 transfer for reliable encoding
         match Command::new("powershell.exe")
             .args([
                 "-NoProfile",
                 "-Command",
-                "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; $input | Set-Clipboard"
+                "$b64 = $input | Out-String; if (-not [string]::IsNullOrWhiteSpace($b64)) { $bytes = [System.Convert]::FromBase64String($b64.Trim()); [System.Text.Encoding]::UTF8.GetString($bytes) | Set-Clipboard }"
             ])
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
@@ -223,9 +242,11 @@ fn set_clipboard(data: &str) -> Result<()> {
                     let mut stdin = child.stdin.take()
                         .ok_or_else(|| anyhow::anyhow!("Failed to open stdin for PowerShell"))?;
 
-                    // Write UTF-8 bytes directly
-                    // PowerShell will handle the encoding correctly
-                    stdin.write_all(data.as_bytes())
+                    // Encode to Base64 in Rust
+                    let base64_str = BASE64_STANDARD.encode(data);
+
+                    // Write Base64 string (safe ASCII)
+                    stdin.write_all(base64_str.as_bytes())
                         .context("Failed to write to PowerShell stdin")?;
 
                     // Explicitly drop stdin to close the pipe and signal EOF
@@ -243,45 +264,30 @@ fn set_clipboard(data: &str) -> Result<()> {
                 Ok(())
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // powershell.exe not found - try clip.exe as fallback (ASCII-only)
-                // clip.exe writes raw UTF-8 bytes which can garble non-ASCII text
-                if data.is_ascii() {
+                // powershell.exe not found - fallback logic
+                // Try clip.exe (legacy, unreliable for utf-8 but better than nothing)
+                 if data.is_ascii() {
                     eprintln!("Warning: powershell.exe not found, trying clip.exe...");
-
-                    match Command::new("clip.exe")
-                        .stdin(Stdio::piped())
-                        .spawn()
-                    {
+                    match Command::new("clip.exe").stdin(Stdio::piped()).spawn() {
                         Ok(mut child) => {
-                            let mut stdin = child.stdin.take()
-                                .ok_or_else(|| anyhow::anyhow!("Failed to open stdin for clip.exe"))?;
-
+                            let mut stdin = child.stdin.take().unwrap();
                             stdin.write_all(data.as_bytes())?;
                             drop(stdin);
-
                             let status = child.wait()?;
-                            if !status.success() {
-                                return Err(anyhow::anyhow!("clip.exe failed"));
-                            }
+                            if !status.success() { return Err(anyhow::anyhow!("clip.exe failed")); }
                             return Ok(());
                         }
-                        Err(_) => {
-                            // clip.exe not available, fall through to arboard
-                        }
+                        Err(_) => {}
                     }
                 }
 
-                // PowerShell failed and either data is non-ASCII or clip.exe unavailable
                 // Fall back to native clipboard (arboard)
                 eprintln!("Warning: WSL detected but Windows interop not available.");
-                eprintln!("Falling back to native clipboard.");
-                eprintln!("To fix: Check /etc/wsl.conf has [interop] enabled=true");
                 let mut clipboard = arboard::Clipboard::new()?;
                 clipboard.set_text(data)?;
                 Ok(())
             }
             Err(e) => {
-                // Other error spawning powershell.exe
                 Err(e.into())
             }
         }
@@ -305,6 +311,11 @@ fn clean_text(input: &str) -> String {
     for line in ansi_stripped.lines() {
         // Check if this is a pure border line (top/bottom of box)
         if RE_BORDER_LINE.is_match(line) {
+            continue;
+        }
+
+        // Check if this is a titled border line (top/bottom with text)
+        if RE_TITLED_BORDER.is_match(line) {
             continue;
         }
 
@@ -357,6 +368,74 @@ fn clean_text(input: &str) -> String {
 
     // Final cleanup: remove any trailing whitespace the TUI might have added
     output.trim_end().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_claude_code_titled_border() {
+        let input = "╭─── Claude Code v2.0.47 ──────────────────────────────────────────────────────────────────────────╮\n\
+                     │                             │ Recent activity                                                    │\n\
+                     │     Welcome back Ainesh!    │ No recent activity                                                 │\n\
+                     │                             │ ────────────────────────────────────────────────────────────────── │\n\
+                     │           ▐▛███▜▌           │ What's new                                                         │\n\
+                     ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯";
+
+        let expected_contains = "Welcome back Ainesh!";
+        let cleaned = clean_text(input);
+
+        println!("Cleaned Output:\n{}", cleaned);
+
+        assert!(cleaned.contains(expected_contains), "Should contain content");
+        assert!(!cleaned.contains("Claude Code v2.0.47"), "Should remove titled top border");
+        assert!(!cleaned.contains("╰───"), "Should remove bottom border");
+        assert!(!cleaned.contains("│     Welcome"), "Should remove left border");
+    }
+
+    #[test]
+    fn test_bold_border() {
+        // Bold style ┏ ━ ┓
+        let input = "┏━━━ Bold Title ━━━┓\n\
+                     │ Content          │\n\
+                     ┗━━━━━━━━━━━━━━━━━━┛";
+        let cleaned = clean_text(input);
+        assert!(cleaned.contains("Content"), "Should preserve content");
+        assert!(!cleaned.contains("Bold Title"), "Should remove bold titled border");
+        assert!(!cleaned.contains("┗━━━"), "Should remove bold bottom border");
+    }
+
+    #[test]
+    fn test_double_border() {
+        // Double style ╔ ═ ╗
+        let input = "╔═══ Double Title ═══╗\n\
+                     │ Content            │\n\
+                     ╚════════════════════╝";
+        let cleaned = clean_text(input);
+        assert!(cleaned.contains("Content"), "Should preserve content");
+        assert!(!cleaned.contains("Double Title"), "Should remove double titled border");
+        assert!(!cleaned.contains("╚═══"), "Should remove double bottom border");
+    }
+
+    #[test]
+    fn test_ansi_stripping() {
+        let input = "\x1b[31mHello\x1b[0m World";
+        let cleaned = clean_text(input);
+        assert_eq!(cleaned, "Hello World");
+
+        // Test OSC sequence (Window Title)
+        let input_osc = "\x1b]0;My Title\x07Hello OSC";
+        let cleaned_osc = clean_text(input_osc);
+        assert_eq!(cleaned_osc, "Hello OSC", "Should strip OSC title");
+    }
+
+    #[test]
+    fn test_code_with_pipes() {
+        let input = "│ let x = a | b; │";
+        let cleaned = clean_text(input);
+        assert_eq!(cleaned, "let x = a | b;");
+    }
 }
 
 fn main() -> Result<()> {

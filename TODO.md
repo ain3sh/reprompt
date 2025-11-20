@@ -1,6 +1,12 @@
-- [x] Update install path to ~/.local/bin
+- [x] Reproduce the Claude Code failure case with a new test in `src/main.rs`.
 - [x] Review AGENT_REMINDERS.md
-- [x] Update README.md and SPEC.md
+- [x] Re-architect `clean_text` logic:
+    - [x] Handle Titled Borders (e.g. `╭─── Title ───╮`).
+    - [x] Improve ANSI stripping (use a robust regex, handle OSC).
+    - [x] Broaden Box Drawing detection (handle Bold, Double, etc.).
 - [x] Review AGENT_REMINDERS.md
-- [x] Auto-add to PATH in .bashrc/.zshrc
+- [x] Fix Encoding Corruption in WSL:
+    - [x] Implement Base64-based transfer for `get_clipboard` (PowerShell).
+    - [x] Implement Base64-based transfer for `set_clipboard` (PowerShell).
 - [x] Review AGENT_REMINDERS.md
+- [x] Verify all tests pass.
