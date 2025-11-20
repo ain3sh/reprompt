@@ -1,0 +1,24 @@
+- [x] Setup: `cargo init` and dependencies [Done: `cargo init`]
+- [x] View AGENT_REMINDERS.md
+- [x] Add dependencies to Cargo.toml
+- [x] View AGENT_REMINDERS.md
+- [x] Implement `clean_text` regex logic
+- [x] View AGENT_REMINDERS.md
+- [x] Add unit tests for `clean_text`
+- [x] View AGENT_REMINDERS.md
+- [x] Implement `is_wsl` check
+- [x] View AGENT_REMINDERS.md
+- [x] Implement `get_clipboard` (WSL + Native)
+- [x] View AGENT_REMINDERS.md
+- [x] Implement `set_clipboard` (WSL + Native)
+- [x] View AGENT_REMINDERS.md
+- [x] Wire up `main` loop
+- [x] View AGENT_REMINDERS.md
+- [x] Verify build and tests
+- [x] View AGENT_REMINDERS.md
+- [x] Test Reprompt locally (Clipboard verification)
+- [x] View AGENT_REMINDERS.md
+- [x] Create GitHub Actions Workflow
+- [x] View AGENT_REMINDERS.md
+- [x] Fix GitHub Actions Workflow triggers
+- [x] View AGENT_REMINDERS.md
