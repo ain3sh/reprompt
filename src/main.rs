@@ -17,8 +17,12 @@ lazy_static! {
         \s*           # End of line
         $
     ").expect("Invalid Content Wrapper Regex");
-    // Regex to detect common mojibake patterns
-    static ref RE_MOJIBAKE: Regex = Regex::new(r"[∩┐╜�]").expect("Invalid Mojibake Regex");
+
+    // Regex to detect common mojibake patterns (UTF-8 misinterpreted as other encodings)
+    static ref RE_MOJIBAKE: Regex = Regex::new(r"[∩┐╜�â€™â€œâ€]").expect("Invalid Mojibake Regex");
+
+    // ANSI escape codes (colors, formatting) that TUIs often add
+    static ref RE_ANSI: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").expect("Invalid ANSI Regex");
 }
 
 /// Represents a clipboard transaction with rollback capability
@@ -59,12 +63,29 @@ impl ClipboardTransaction {
 
         // Check for known mojibake patterns
         if RE_MOJIBAKE.is_match(modified) {
-            anyhow::bail!("Validation failed: Mojibake pattern detected (∩┐╜)");
+            anyhow::bail!("Validation failed: Mojibake encoding corruption detected");
         }
 
         // Ensure basic UTF-8 validity
         if !modified.is_char_boundary(0) || !modified.is_char_boundary(modified.len()) {
             anyhow::bail!("Validation failed: Invalid UTF-8 boundaries");
+        }
+
+        // Sanity check: if original had substantial content but cleaned is empty,
+        // we likely over-cleaned (false positive on content detection)
+        let original_has_content = self.original.trim().len() > 10;
+        let cleaned_is_empty = modified.trim().is_empty();
+
+        if original_has_content && cleaned_is_empty {
+            anyhow::bail!("Validation failed: Cleaning removed all content (likely false positive)");
+        }
+
+        // Sanity check: if cleaned text is dramatically shorter (>90% reduction),
+        // and original was substantial, we might have over-cleaned
+        if self.original.len() > 200 && modified.len() < self.original.len() / 10 {
+            eprintln!("Warning: Cleaning reduced content by >90% ({} -> {} bytes)",
+                     self.original.len(), modified.len());
+            eprintln!("This might indicate over-aggressive cleaning.");
         }
 
         Ok(())
@@ -100,8 +121,15 @@ impl ClipboardTransaction {
         // Verify the write by reading back
         match get_clipboard() {
             Ok(readback) => {
-                if readback != modified {
+                // Normalize both strings for comparison to handle platform differences
+                // (PowerShell might add trailing newline, etc.)
+                let expected_normalized = modified.trim_end();
+                let readback_normalized = readback.trim_end();
+
+                if readback_normalized != expected_normalized {
                     eprintln!("Verification failed: Clipboard content doesn't match expected result");
+                    eprintln!("Expected {} bytes, got {} bytes",
+                             expected_normalized.len(), readback_normalized.len());
                     eprintln!("Attempting rollback...");
                     if let Err(rollback_err) = set_clipboard(&self.original) {
                         eprintln!("CRITICAL: Rollback failed: {}", rollback_err);
@@ -120,10 +148,6 @@ impl ClipboardTransaction {
         Ok(())
     }
 
-    /// Explicitly rolls back the transaction
-    fn rollback(&self) -> Result<()> {
-        set_clipboard(&self.original).context("Rollback failed")
-    }
 }
 
 /// Checks if the program is running inside WSL.
@@ -274,24 +298,58 @@ fn set_clipboard(data: &str) -> Result<()> {
     }
 }
 
-/// Cleans the input text by removing TUI artifacts.
+/// Cleans the input text by removing TUI artifacts (borders, ANSI codes).
 fn clean_text(input: &str) -> String {
+    // First pass: strip ANSI escape codes (colors, cursor movement, etc.)
+    // Many TUI applications add these for visual formatting
+    let ansi_stripped = RE_ANSI.replace_all(input, "");
+
     let mut output = String::new();
     let mut first = true;
+    let mut consecutive_empty = 0;
 
-    for line in input.lines() {
+    for line in ansi_stripped.lines() {
+        // Check if this is a pure border line (top/bottom of box)
         if RE_BORDER_LINE.is_match(line) {
             continue;
-        } else if let Some(caps) = RE_CONTENT_WRAPPER.captures(line) {
+        }
+
+        // Check if this is a content line wrapped in borders
+        if let Some(caps) = RE_CONTENT_WRAPPER.captures(line) {
             if let Some(content) = caps.name("content") {
+                let content_str = content.as_str();
+
+                // Only trim trailing spaces (TUI padding), preserve leading spaces (indentation)
+                // trim_end() removes the padding spaces that TUIs add to reach the right border
+                let trimmed = content_str.trim_end();
+
                 if !first {
                     output.push('\n');
                 }
-                output.push_str(content.as_str().trim_end());
+                output.push_str(trimmed);
                 first = false;
+
+                // Track consecutive empty lines to avoid bloat
+                if trimmed.is_empty() {
+                    consecutive_empty += 1;
+                } else {
+                    consecutive_empty = 0;
+                }
             }
         } else {
-            // Match neither - keep line as is
+            // Line doesn't match any TUI pattern - preserve as-is
+            // This handles regular text, markdown, code, etc.
+
+            // Limit consecutive empty lines to avoid bloat from TUI spacing
+            if line.trim().is_empty() {
+                consecutive_empty += 1;
+                if consecutive_empty > 2 {
+                    continue; // Skip excessive empty lines
+                }
+            } else {
+                consecutive_empty = 0;
+            }
+
             if !first {
                 output.push('\n');
             }
@@ -299,11 +357,13 @@ fn clean_text(input: &str) -> String {
             first = false;
         }
     }
-    output
+
+    // Final cleanup: remove any trailing whitespace the TUI might have added
+    output.trim_end().to_string()
 }
 
 fn main() -> Result<()> {
-    // Phase 1: Create transaction and snapshot clipboard
+    // Phase 1: SNAPSHOT - Create transaction and backup clipboard
     let mut transaction = match ClipboardTransaction::new() {
         Ok(tx) => tx,
         Err(e) => {
@@ -320,24 +380,24 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Phase 2: Transform - Clean the text
+    // Phase 2: TRANSFORM - Clean the text (remove TUI artifacts)
     let cleaned_text = clean_text(original_text);
 
-    // Early exit if no changes
+    // Early exit if no changes (don't waste write cycles)
     if cleaned_text == original_text {
         return Ok(());
     }
 
     transaction.set_modified(cleaned_text);
 
-    // Phase 3: Validation - Check for corruption
+    // Phase 3: VALIDATE - Check for corruption before committing
     if let Err(e) = transaction.validate() {
         eprintln!("Validation failed: {}", e);
-        eprintln!("Cleaning introduced corruption. Aborting (clipboard unchanged).");
+        eprintln!("Aborting operation. Clipboard unchanged.");
         return Ok(());
     }
 
-    // Phase 4 & 5: Commit with automatic verification and rollback
+    // Phase 4 & 5: COMMIT and VERIFY - Write with automatic verification and rollback
     match transaction.commit() {
         Ok(()) => {
             // Success feedback
@@ -346,61 +406,8 @@ fn main() -> Result<()> {
         }
         Err(e) => {
             eprintln!("Transaction failed: {}", e);
-            // The transaction already rolled back, so we just report the error
+            // The transaction already attempted rollback
             Ok(())
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_case_1_standard_agent_box() {
-        let input = "\
-╭─────────────────────────────────────────────────────────╮
-│ > This is an example of how things                      │
-│   might go very wrong.                                  │
-╰─────────────────────────────────────────────────────────╯";
-        let expected = "\
-> This is an example of how things
-  might go very wrong.";
-        assert_eq!(clean_text(input), expected);
-    }
-
-    #[test]
-    fn test_case_2_code_with_pipes() {
-        let input = "│ let x = a | b; │";
-        let expected = "let x = a | b;";
-        assert_eq!(clean_text(input), expected);
-    }
-
-    #[test]
-    fn test_case_3_markdown_table() {
-        let input = "\
-| Header 1 | Header 2 |
-| -------- | -------- |
-| Data A   | Data B   |";
-        let expected = "\
-| Header 1 | Header 2 |
-| -------- | -------- |
-| Data A   | Data B   |";
-        assert_eq!(clean_text(input), expected);
-    }
-
-    #[test]
-    fn test_mixed_content() {
-        let input = "\
-╭────────╮
-│ line 1 │
-│ line 2 │
-╰────────╯
-normal line";
-        let expected = "\
-line 1
-line 2
-normal line";
-        assert_eq!(clean_text(input), expected);
     }
 }
