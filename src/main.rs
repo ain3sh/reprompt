@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use std::io::Write;
 
 lazy_static! {
-    static ref RE_BORDER_LINE: Regex = Regex::new(r"^[\s╭╮╰╯─═━┌┐└┘]+$").unwrap();
+    static ref RE_BORDER_LINE: Regex = Regex::new(r"^[\s╭╮╰╯─═━┌┐└┘]+$").expect("Invalid Border Line Regex");
     static ref RE_CONTENT_WRAPPER: Regex = Regex::new(r"(?x)
         ^
         \s*           # Start of line, optional indentation
@@ -16,13 +16,16 @@ lazy_static! {
         [│║]?         # Optional trailing border
         \s*           # End of line
         $
-    ").unwrap();
+    ").expect("Invalid Content Wrapper Regex");
 }
 
+/// Checks if the program is running inside WSL.
 fn is_wsl_custom() -> bool {
     is_wsl::is_wsl()
 }
 
+/// Reads text from the system clipboard.
+/// Handles Native (arboard) and WSL (powershell) environments.
 fn get_clipboard() -> Result<String> {
     if is_wsl_custom() {
         let output = Command::new("powershell.exe")
@@ -42,6 +45,8 @@ fn get_clipboard() -> Result<String> {
     }
 }
 
+/// Writes text to the system clipboard.
+/// Handles Native (arboard) and WSL (clip.exe) environments.
 fn set_clipboard(data: &str) -> Result<()> {
     if is_wsl_custom() {
         let mut child = Command::new("clip.exe")
@@ -64,6 +69,7 @@ fn set_clipboard(data: &str) -> Result<()> {
     }
 }
 
+/// Cleans the input text by removing TUI artifacts.
 fn clean_text(input: &str) -> String {
     let mut output = String::new();
     let mut first = true;
