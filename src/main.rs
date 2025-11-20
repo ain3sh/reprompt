@@ -18,11 +18,6 @@ lazy_static! {
         $
     ").expect("Invalid Content Wrapper Regex");
 
-    // Regex to detect the Unicode replacement character (U+FFFD)
-    // This reliably indicates encoding corruption without false positives on legitimate Unicode
-    // characters like €, ™, or letters with diacritics (â, ê, etc.)
-    static ref RE_MOJIBAKE: Regex = Regex::new("\u{FFFD}").expect("Invalid Mojibake Regex");
-
     // ANSI escape codes (colors, formatting) that TUIs often add
     static ref RE_ANSI: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").expect("Invalid ANSI Regex");
 }
@@ -58,19 +53,9 @@ impl ClipboardTransaction {
         let modified = self.modified.as_ref()
             .ok_or_else(|| anyhow::anyhow!("No modified content to validate"))?;
 
-        // Check for Unicode replacement characters (indicates encoding issues)
-        if modified.contains('�') {
-            anyhow::bail!("Validation failed: Unicode replacement character detected");
-        }
-
-        // Check for known mojibake patterns
-        if RE_MOJIBAKE.is_match(modified) {
-            anyhow::bail!("Validation failed: Mojibake encoding corruption detected");
-        }
-
-        // Ensure basic UTF-8 validity
-        if !modified.is_char_boundary(0) || !modified.is_char_boundary(modified.len()) {
-            anyhow::bail!("Validation failed: Invalid UTF-8 boundaries");
+        // Bail on Unicode replacement character (U+FFFD indicates encoding corruption)
+        if modified.contains('\u{FFFD}') {
+            anyhow::bail!("Unicode replacement character (U+FFFD) detected");
         }
 
         // Sanity check: if original had substantial content but cleaned is empty,
@@ -79,7 +64,7 @@ impl ClipboardTransaction {
         let cleaned_is_empty = modified.trim().is_empty();
 
         if original_has_content && cleaned_is_empty {
-            anyhow::bail!("Validation failed: Cleaning removed all content (likely false positive)");
+            anyhow::bail!("Cleaning removed all content (likely false positive)");
         }
 
         // Sanity check: if cleaned text is dramatically shorter (>90% reduction),
@@ -258,36 +243,42 @@ fn set_clipboard(data: &str) -> Result<()> {
                 Ok(())
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // powershell.exe not found - try clip.exe as fallback
-                eprintln!("Warning: powershell.exe not found, trying clip.exe...");
+                // powershell.exe not found - try clip.exe as fallback (ASCII-only)
+                // clip.exe writes raw UTF-8 bytes which can garble non-ASCII text
+                if data.is_ascii() {
+                    eprintln!("Warning: powershell.exe not found, trying clip.exe...");
 
-                match Command::new("clip.exe")
-                    .stdin(Stdio::piped())
-                    .spawn()
-                {
-                    Ok(mut child) => {
-                        let mut stdin = child.stdin.take()
-                            .ok_or_else(|| anyhow::anyhow!("Failed to open stdin for clip.exe"))?;
+                    match Command::new("clip.exe")
+                        .stdin(Stdio::piped())
+                        .spawn()
+                    {
+                        Ok(mut child) => {
+                            let mut stdin = child.stdin.take()
+                                .ok_or_else(|| anyhow::anyhow!("Failed to open stdin for clip.exe"))?;
 
-                        stdin.write_all(data.as_bytes())?;
-                        drop(stdin);
+                            stdin.write_all(data.as_bytes())?;
+                            drop(stdin);
 
-                        let status = child.wait()?;
-                        if !status.success() {
-                            return Err(anyhow::anyhow!("clip.exe failed"));
+                            let status = child.wait()?;
+                            if !status.success() {
+                                return Err(anyhow::anyhow!("clip.exe failed"));
+                            }
+                            return Ok(());
                         }
-                        Ok(())
-                    }
-                    Err(_) => {
-                        // Both PowerShell and clip.exe failed - fall back to arboard
-                        eprintln!("Warning: WSL detected but Windows interop not available.");
-                        eprintln!("Falling back to native clipboard.");
-                        eprintln!("To fix: Check /etc/wsl.conf has [interop] enabled=true");
-                        let mut clipboard = arboard::Clipboard::new()?;
-                        clipboard.set_text(data)?;
-                        Ok(())
+                        Err(_) => {
+                            // clip.exe not available, fall through to arboard
+                        }
                     }
                 }
+
+                // PowerShell failed and either data is non-ASCII or clip.exe unavailable
+                // Fall back to native clipboard (arboard)
+                eprintln!("Warning: WSL detected but Windows interop not available.");
+                eprintln!("Falling back to native clipboard.");
+                eprintln!("To fix: Check /etc/wsl.conf has [interop] enabled=true");
+                let mut clipboard = arboard::Clipboard::new()?;
+                clipboard.set_text(data)?;
+                Ok(())
             }
             Err(e) => {
                 // Other error spawning powershell.exe
@@ -326,18 +317,21 @@ fn clean_text(input: &str) -> String {
                 // trim_end() removes the padding spaces that TUIs add to reach the right border
                 let trimmed = content_str.trim_end();
 
+                // Track consecutive empty lines to avoid bloat (apply limit globally)
+                if trimmed.is_empty() {
+                    consecutive_empty += 1;
+                    if consecutive_empty > 2 {
+                        continue; // Skip excessive empty lines from wrapped content too
+                    }
+                } else {
+                    consecutive_empty = 0;
+                }
+
                 if !first {
                     output.push('\n');
                 }
                 output.push_str(trimmed);
                 first = false;
-
-                // Track consecutive empty lines to avoid bloat
-                if trimmed.is_empty() {
-                    consecutive_empty += 1;
-                } else {
-                    consecutive_empty = 0;
-                }
             }
         } else {
             // Line doesn't match any TUI pattern - preserve as-is
@@ -395,7 +389,7 @@ fn main() -> Result<()> {
 
     // Phase 3: VALIDATE - Check for corruption before committing
     if let Err(e) = transaction.validate() {
-        eprintln!("Validation failed: {}", e);
+        eprintln!("Validation failed: {e}");
         eprintln!("Aborting operation. Clipboard unchanged.");
         return Ok(());
     }
