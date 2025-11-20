@@ -75,6 +75,79 @@ alias cleanclip='reprompt'
 | :--- | :--- | :--- | :--- |
 | **Windows** | Native | None | Works out of the box. |
 | **macOS** | Native | None | Works out of the box. |
-| **WSL** | WSL2 | `powershell.exe`, `clip.exe` | Proxies to Windows clipboard automatically. |
+| **WSL** | WSL2 | `powershell.exe`, `clip.exe` (optional) | Proxies to Windows clipboard. Falls back to native if interop disabled. |
 | **Linux** | Desktop (X11/Wayland) | X Server / Wayland | Requires a clipboard manager (usually built-in) for persistence. |
 | **Linux** | Headless (CI/SSH) | `xvfb`, `x11-apps` | Requires `xvfb` for display and `xclipboard` (from `x11-apps`) to persist data after exit. |
+
+## Troubleshooting
+
+### WSL2: "Error reading clipboard: No such file or directory (os error 2)"
+
+This error occurs when WSL2 detects your environment as WSL but cannot access Windows executables (`powershell.exe`, `clip.exe`). This is a **known issue with WSL2 + systemd** on Ubuntu 24.04 LTS and newer distributions.
+
+**Root Cause:** When systemd is enabled in WSL2, it creates `/proc/sys/fs/binfmt_misc/WSLInterop-late` instead of `/proc/sys/fs/binfmt_misc/WSLInterop`, breaking Windows interop.
+
+**Solution 1: Enable WSL Interop** (Recommended)
+
+1. Check if interop is disabled:
+   ```bash
+   cat /etc/wsl.conf
+   ```
+
+2. Ensure `/etc/wsl.conf` contains:
+   ```ini
+   [interop]
+   enabled=true
+   appendWindowsPath=true
+   ```
+
+3. Restart WSL from PowerShell/CMD:
+   ```powershell
+   wsl --shutdown
+   ```
+
+4. Reopen your WSL terminal and test:
+   ```bash
+   powershell.exe -Command "echo test"
+   ```
+
+**Solution 2: Use Automatic Fallback**
+
+`reprompt` automatically falls back to native Linux clipboard (`arboard`) when Windows executables are not accessible. Simply ensure you have a display server (X11/Wayland) running.
+
+**Solution 3: Create Systemd Service**
+
+For persistent fix with systemd, create `/etc/systemd/system/wsl-interop-fix.service`:
+
+```ini
+[Unit]
+Description=Fix WSL Interop for Windows executables
+After=systemd-binfmt.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'echo ":WSLInterop:M::MZ::/init:" > /proc/sys/fs/binfmt_misc/register'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable it:
+```bash
+sudo systemctl enable wsl-interop-fix.service
+sudo systemctl start wsl-interop-fix.service
+```
+
+### Linux: "Error reading clipboard: X11 server connection timed out"
+
+This occurs on headless Linux systems (SSH, CI/CD) without a display server.
+
+**Solution:**
+- Install and run `xvfb`:
+  ```bash
+  sudo apt install xvfb x11-apps
+  Xvfb :99 -screen 0 1024x768x24 &
+  export DISPLAY=:99
+  reprompt
+  ```
